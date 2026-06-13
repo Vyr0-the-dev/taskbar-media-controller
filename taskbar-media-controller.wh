@@ -119,6 +119,54 @@ All settings are available in the Windhawk mod settings panel:
 - MultiMonitor: true
   $name: Multi-monitor taskbar
   $description: Show on the taskbar of the monitor where media is playing (if multiple taskbars exist).
+- ScrollingText: true
+  $name: Scrolling text
+  $description: Automatically scroll long song titles that don't fit.
+- ScrollSpeed: 1
+  $name: Scroll speed
+  $description: Pixels to scroll per frame (1-10).
+- ScrollDelay: 60
+  $name: Scroll delay
+  $description: Frames to wait before scrolling starts (0-300).
+- ButtonGap: 32
+  $name: Button spacing
+  $description: Base gap between playback buttons in pixels (before scale).
+- ButtonHoverOpacity: 25
+  $name: Button hover opacity
+  $description: Background opacity of buttons on hover, 0-100.
+- IconOpacity: 60
+  $name: Icon base opacity
+  $description: Base opacity of playback icons, 0-100.
+- ProgressHeight: 2
+  $name: Progress bar height
+  $description: Height of the progress bar in pixels (1-8).
+- ProgressFillOpacity: 200
+  $name: Progress fill opacity
+  $description: Opacity of the filled progress portion, 0-255.
+- ProgressTrackOpacity: 50
+  $name: Progress track opacity
+  $description: Opacity of the progress bar background track, 0-255.
+- GlowSize: 8
+  $name: Glow size
+  $description: How far the album art glow extends beyond the art, in pixels (0-30).
+- GlowOpacity: 60
+  $name: Glow opacity
+  $description: Center opacity of the glow effect, 0-255.
+- AnimSpeed: "0.15"
+  $name: Animation speed
+  $description: Lerp speed for hover/scroll animations, 0.01-1.0.
+- TransitionSpeed: 15
+  $name: Transition fade speed
+  $description: Alpha change per frame during song transitions (1-50).
+- VolumeStep: "0.05"
+  $name: Volume wheel step
+  $description: Volume change per mouse wheel notch, 0.01-0.5.
+- ArtPadding: 6
+  $name: Album art padding
+  $description: Padding around the album art in pixels (0-20).
+- VolumeSliderWidth: 60
+  $name: Volume slider width
+  $description: Width of the volume slider in pixels (20-200).
 */
 // ==/WindhawkModSettings==
 
@@ -236,6 +284,22 @@ struct ModSettings {
     bool showTooltip = true;
     bool transitionAnim = true;
     bool multiMonitor = true;
+    bool scrollingText = true;
+    int scrollSpeed = 1;
+    int scrollDelay = 60;
+    int buttonGap = 32;
+    int buttonHoverOpacity = 25;
+    int iconOpacity = 60;
+    int progressHeight = 2;
+    int progressFillOpacity = 200;
+    int progressTrackOpacity = 50;
+    int glowSize = 8;
+    int glowOpacity = 60;
+    double animSpeed = 0.15;
+    int transitionSpeed = 15;
+    double volumeStep = 0.05;
+    int artPadding = 6;
+    int volumeSliderWidth = 60;
 } g_Settings;
 
 // --- Global State ---
@@ -343,6 +407,73 @@ void LoadSettings() {
     g_Settings.showTooltip = Wh_GetIntSetting(L"ShowTooltip") != 0;
     g_Settings.transitionAnim = Wh_GetIntSetting(L"TransitionAnim") != 0;
     g_Settings.multiMonitor = Wh_GetIntSetting(L"MultiMonitor") != 0;
+
+    // Scroll settings
+    g_Settings.scrollingText = Wh_GetIntSetting(L"ScrollingText") != 0;
+    g_Settings.scrollSpeed = Wh_GetIntSetting(L"ScrollSpeed");
+    g_Settings.scrollDelay = Wh_GetIntSetting(L"ScrollDelay");
+    if (g_Settings.scrollSpeed < 1) g_Settings.scrollSpeed = 1;
+    if (g_Settings.scrollSpeed > 10) g_Settings.scrollSpeed = 10;
+    if (g_Settings.scrollDelay < 0) g_Settings.scrollDelay = 0;
+    if (g_Settings.scrollDelay > 300) g_Settings.scrollDelay = 300;
+
+    // Button settings
+    g_Settings.buttonGap = Wh_GetIntSetting(L"ButtonGap");
+    g_Settings.buttonHoverOpacity = Wh_GetIntSetting(L"ButtonHoverOpacity");
+    g_Settings.iconOpacity = Wh_GetIntSetting(L"IconOpacity");
+    if (g_Settings.buttonHoverOpacity < 0) g_Settings.buttonHoverOpacity = 0;
+    if (g_Settings.buttonHoverOpacity > 100) g_Settings.buttonHoverOpacity = 100;
+    if (g_Settings.iconOpacity < 0) g_Settings.iconOpacity = 0;
+    if (g_Settings.iconOpacity > 100) g_Settings.iconOpacity = 100;
+
+    // Progress bar settings
+    g_Settings.progressHeight = Wh_GetIntSetting(L"ProgressHeight");
+    g_Settings.progressFillOpacity = Wh_GetIntSetting(L"ProgressFillOpacity");
+    g_Settings.progressTrackOpacity = Wh_GetIntSetting(L"ProgressTrackOpacity");
+    if (g_Settings.progressHeight < 1) g_Settings.progressHeight = 1;
+    if (g_Settings.progressHeight > 8) g_Settings.progressHeight = 8;
+
+    // Glow settings
+    g_Settings.glowSize = Wh_GetIntSetting(L"GlowSize");
+    g_Settings.glowOpacity = Wh_GetIntSetting(L"GlowOpacity");
+    if (g_Settings.glowSize < 0) g_Settings.glowSize = 0;
+    if (g_Settings.glowSize > 30) g_Settings.glowSize = 30;
+    if (g_Settings.glowOpacity < 0) g_Settings.glowOpacity = 0;
+    if (g_Settings.glowOpacity > 255) g_Settings.glowOpacity = 255;
+
+    // Animation settings
+    PCWSTR animStr = Wh_GetStringSetting(L"AnimSpeed");
+    if (animStr) {
+        g_Settings.animSpeed = _wtof(animStr);
+        Wh_FreeStringSetting(animStr);
+    } else {
+        g_Settings.animSpeed = 0.15;
+    }
+    if (g_Settings.animSpeed < 0.01) g_Settings.animSpeed = 0.01;
+    if (g_Settings.animSpeed > 1.0) g_Settings.animSpeed = 1.0;
+
+    g_Settings.transitionSpeed = Wh_GetIntSetting(L"TransitionSpeed");
+    if (g_Settings.transitionSpeed < 1) g_Settings.transitionSpeed = 1;
+    if (g_Settings.transitionSpeed > 50) g_Settings.transitionSpeed = 50;
+
+    // Volume settings
+    PCWSTR volStepStr = Wh_GetStringSetting(L"VolumeStep");
+    if (volStepStr) {
+        g_Settings.volumeStep = _wtof(volStepStr);
+        Wh_FreeStringSetting(volStepStr);
+    } else {
+        g_Settings.volumeStep = 0.05;
+    }
+    if (g_Settings.volumeStep < 0.01) g_Settings.volumeStep = 0.01;
+    if (g_Settings.volumeStep > 0.5) g_Settings.volumeStep = 0.5;
+
+    // Album art settings
+    g_Settings.artPadding = Wh_GetIntSetting(L"ArtPadding");
+    g_Settings.volumeSliderWidth = Wh_GetIntSetting(L"VolumeSliderWidth");
+    if (g_Settings.artPadding < 0) g_Settings.artPadding = 0;
+    if (g_Settings.artPadding > 20) g_Settings.artPadding = 20;
+    if (g_Settings.volumeSliderWidth < 20) g_Settings.volumeSliderWidth = 20;
+    if (g_Settings.volumeSliderWidth > 200) g_Settings.volumeSliderWidth = 200;
 }
 
 // --- WinRT / GSMTC ---
@@ -683,8 +814,8 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
 
     // 1. Album Art
     int artSize = height - 12;
-    int artX = 6;
-    int artY = 6;
+    int artX = g_Settings.artPadding;
+    int artY = g_Settings.artPadding;
     int cornerRadius = artSize / 5;
 
     // Album glow effect
@@ -694,11 +825,11 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         BYTE glowB = state.dominantColor & 0xFF;
 
         GraphicsPath glowPath;
-        int glowExpand = 8;
+        int glowExpand = g_Settings.glowSize;
         glowPath.AddEllipse(artX - glowExpand, artY - glowExpand, artSize + glowExpand * 2, artSize + glowExpand * 2);
 
         PathGradientBrush glowBrush(&glowPath);
-        glowBrush.SetCenterColor(Color(60, glowR, glowG, glowB));
+        glowBrush.SetCenterColor(Color((BYTE)g_Settings.glowOpacity, glowR, glowG, glowB));
         Color surroundColors[] = {Color(0, glowR, glowG, glowB)};
         INT numColors = 1;
         glowBrush.SetSurroundColors(surroundColors, &numColors);
@@ -745,7 +876,7 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     FontFamily glyphFamily(L"Segoe Fluent Icons");
     Font glyphFont(&glyphFamily, (REAL)(14.0 * scale), FontStyleRegular, UnitPixel);
 
-    float gap = 32.0f * (float)scale;
+    float gap = (float)g_Settings.buttonGap * (float)scale;
     float btnRadius = 16.0f * (float)scale;
 
     // Draw main 3 buttons (index 1-3)
@@ -754,17 +885,17 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         float btnY = (float)controlY;
 
         float target = (g_HoverState == i) ? 255.0f : 0.0f;
-        g_ButtonAnim[i] += (target - g_ButtonAnim[i]) * 0.15f;
+        g_ButtonAnim[i] += (target - g_ButtonAnim[i]) * (float)g_Settings.animSpeed;
         if (abs(g_ButtonAnim[i] - target) < 1.0f) g_ButtonAnim[i] = target;
 
-        BYTE bgAlpha = (BYTE)(g_ButtonAnim[i] * 0.25f);
+        BYTE bgAlpha = (BYTE)(g_ButtonAnim[i] * (float)g_Settings.buttonHoverOpacity / 255.0f);
         if (bgAlpha > 0) {
             SolidBrush bgBrush{Color(bgAlpha, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
             int rr = (int)(6.0f * scale);
             DrawRoundedRect(graphics, bgBrush, (int)(btnX - btnRadius), (int)(btnY - btnRadius), (int)(btnRadius * 2), (int)(btnRadius * 2), rr);
         }
 
-        BYTE iconAlpha = (BYTE)(153 + g_ButtonAnim[i] * 0.4f);
+        BYTE iconAlpha = (BYTE)(g_Settings.iconOpacity * 2.55f + g_ButtonAnim[i] * 0.4f);
         SolidBrush iconBrush{Color(iconAlpha, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
 
         WCHAR glyph = 0;
@@ -781,13 +912,13 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
 
     // Volume slider
     float volHoverTarget = (g_HoverState >= 1 && g_HoverState <= 3) ? 1.0f : 0.0f;
-    g_VolumeHoverAnim += (volHoverTarget - g_VolumeHoverAnim) * 0.15f;
+    g_VolumeHoverAnim += (volHoverTarget - g_VolumeHoverAnim) * (float)g_Settings.animSpeed;
     if (abs(g_VolumeHoverAnim - volHoverTarget) < 0.01f) g_VolumeHoverAnim = volHoverTarget;
 
     if (g_Settings.showVolume && g_VolumeHoverAnim > 0.01f) {
         float sliderStartX = startControlX + 3 * gap + btnRadius + 4;
         float sliderY = controlY;
-        float sliderWidth = 60.0f;
+        float sliderWidth = (float)g_Settings.volumeSliderWidth;
         float sliderHeight = 4.0f;
 
         if (g_VolumeLevel < 0) g_VolumeLevel = GetSystemVolume();
@@ -813,9 +944,9 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     // Progress bar
     if (g_Settings.showProgress && state.durationMs > 0) {
         int barY = height - 4;
-        int barHeight = 2;
-        int barRadius = 1;
-        int padding = 8;
+        int barHeight = g_Settings.progressHeight;
+        int barRadius = barHeight / 2;
+        int padding = g_Settings.progressHeight * 2 + 4;
         int barWidth = width - padding * 2;
 
         // Interpolate progress between polls for smoother movement
@@ -831,14 +962,14 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         }
 
         // Background track
-        SolidBrush trackBrush{Color(50, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
+        SolidBrush trackBrush{Color((BYTE)g_Settings.progressTrackOpacity, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
         DrawRoundedRect(graphics, trackBrush, padding, barY, barWidth, barHeight, barRadius);
 
         // Filled progress
         if (displayProgress > 0.0 && displayProgress <= 1.0) {
             int fillWidth = (int)(barWidth * displayProgress);
             if (fillWidth > 0) {
-                SolidBrush fillBrush{Color(200, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
+                SolidBrush fillBrush{Color((BYTE)g_Settings.progressFillOpacity, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
                 DrawRoundedRect(graphics, fillBrush, padding, barY, fillWidth, barHeight, barRadius);
             }
         }
@@ -856,7 +987,7 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     int textMaxW = width - textX - 10;
 
     if (g_Settings.showVolume && g_VolumeHoverAnim > 0.01f) {
-        int sliderEnd = (int)(startControlX + 3 * gap + btnRadius + 4 + 60 + 10);
+        int sliderEnd = (int)(startControlX + 3 * gap + btnRadius + 4 + g_Settings.volumeSliderWidth + 10);
         if (sliderEnd > textX) {
             textMaxW = width - sliderEnd - 10;
             if (textMaxW < 50) textMaxW = 50;
@@ -1201,7 +1332,7 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 if (g_TransitionActive) {
                     if (g_TransitionPhase == 1) {
                         // Fading out old song
-                        g_TransitionAlpha -= 15;
+                        g_TransitionAlpha -= g_Settings.transitionSpeed;
                         if (g_TransitionAlpha <= 0) {
                             g_TransitionAlpha = 0;
                             g_TransitionPhase = 2;  // Switch to fade in
@@ -1209,7 +1340,7 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         needAnim = true;
                     } else if (g_TransitionPhase == 2) {
                         // Fading in new song
-                        g_TransitionAlpha += 15;
+                        g_TransitionAlpha += g_Settings.transitionSpeed;
                         if (g_TransitionAlpha >= 255) {
                             g_TransitionAlpha = 255;
                             g_TransitionActive = false;
@@ -1224,10 +1355,10 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         if (g_ScrollWait > 0) {
                             g_ScrollWait--;
                         } else {
-                            g_ScrollOffset++;
+                            g_ScrollOffset += g_Settings.scrollSpeed;
                             if (g_ScrollOffset > g_TextWidth + 40) {
                                 g_ScrollOffset = 0;
-                                g_ScrollWait = 60;
+                                g_ScrollWait = g_Settings.scrollDelay;
                             }
                         }
                     }
@@ -1320,8 +1451,8 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             double scale = g_Settings.buttonScale;
 
             // Hit targets for 3 buttons
-            int startControlX = 6 + artSize + (int)(30 * scale);
-            float gap = 32.0f * (float)scale;
+            int startControlX = g_Settings.artPadding + artSize + (int)(30 * scale);
+            float gap = (float)g_Settings.buttonGap * (float)scale;
             float btnRadius = 16.0f * (float)scale;
 
             int newState = 0;
@@ -1337,7 +1468,7 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
             // Album art hover detection for tooltip
             if (g_Settings.showTooltip && g_hTooltip) {
-                bool overAlbumArt = (x >= 6 && x <= 6 + artSize && y >= 6 && y <= 6 + artSize);
+                bool overAlbumArt = (x >= g_Settings.artPadding && x <= g_Settings.artPadding + artSize && y >= g_Settings.artPadding && y <= g_Settings.artPadding + artSize);
                 if (overAlbumArt && !g_TooltipVisible) {
                     lock_guard<mutex> guard(g_MediaState.lock);
                     if (g_MediaState.hasMedia) {
@@ -1460,7 +1591,7 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         case WM_MOUSEWHEEL: {
             short zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-            float step = 0.05f;
+            float step = (float)g_Settings.volumeStep;
             if (g_VolumeLevel < 0) g_VolumeLevel = GetSystemVolume();
             if (g_VolumeLevel < 0) g_VolumeLevel = 0.5f;
             g_VolumeLevel += (zDelta > 0 ? step : -step);
