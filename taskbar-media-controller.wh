@@ -11,16 +11,14 @@
 
 // ==WindhawkModReadme==
 /*
-A sleek taskbar widget that shows your currently playing music with playback controls and volume slider.
+A sleek taskbar widget that shows your currently playing music with playback controls.
 
 ## Features
 
 - **Now Playing** — Displays song title, artist, and album art from any app using Windows media transport controls (Spotify, YouTube Music, Tidal, etc.)
 - **Playback Controls** — Previous, play/pause, and next buttons with hover animations
-- **Volume Slider** — Appears on hover to control system volume directly from the taskbar
+- **Volume Control** — Adjust system volume using mouse wheel while hovering over the panel
 - **Progress Bar** — Thin progress bar at the bottom showing playback position with smooth interpolation
-- **Album Art Glow** — Subtle glow effect behind album art using its dominant color
-- **Album Art Tooltip** — Hover over album art to see full song info (title, artist, duration)
 - **Song Transition Animation** — Smooth fade animation when the song changes
 - **Multi-Monitor Support** — Shows on the taskbar of the active monitor (when multiple taskbars exist)
 - **Album Art** — Shows album artwork with rounded corners, or a music note placeholder when unavailable
@@ -35,10 +33,10 @@ A sleek taskbar widget that shows your currently playing music with playback con
 ## Usage
 
 1. Enable the mod and the widget will appear on your taskbar
-2. Hover over the panel to reveal playback controls and volume slider
+2. Hover over the panel to reveal playback controls
 3. Click the buttons to control media playback
 4. Click on the progress bar to seek to a different position
-5. Hover over album art to see full song information
+5. Use mouse wheel to adjust system volume while hovering over the panel
 6. Adjust settings in the Windhawk UI to customize appearance and behavior
 
 ## Requirements
@@ -55,11 +53,9 @@ All settings are available in the Windhawk mod settings panel:
 - **Background** — Acrylic blur opacity (0-255)
 - **Buttons** — Scale factor (0.5x to 4.0x)
 - **Progress Bar** — Show/hide the progress bar at the bottom
-- **Album Glow** — Enable/disable the glow effect behind album art
-- **Tooltip** — Show/hide song info on album art hover
 - **Transition Animation** — Enable/disable fade effect on song changes
 - **Multi-Monitor** — Show on active monitor's taskbar (multi-monitor setups)
-- **Behavior** — Hide in fullscreen, idle timeout, volume slider toggle
+- **Behavior** — Hide in fullscreen, idle timeout
 */
 // ==/WindhawkModReadme==
 
@@ -68,10 +64,10 @@ All settings are available in the Windhawk mod settings panel:
 - PanelWidth: 300
   $name: Panel width
   $description: Width of the music panel in pixels.
-- PanelHeight: 48
+- PanelHeight: 45
   $name: Panel height
   $description: Height of the music panel in pixels.
-- FontSize: 11
+- FontSize: 12
   $name: Font size
   $description: Font size for song title and artist.
 - OffsetX: 12
@@ -83,7 +79,7 @@ All settings are available in the Windhawk mod settings panel:
 - AutoTheme: true
   $name: Auto theme
   $description: Automatically adjust text color based on system light/dark theme.
-- AlbumColor: false
+- AlbumColor: true
   $name: Album art color
   $description: Use the dominant color from the album art for text and icons. Overrides AutoTheme and manual text color when enabled.
 - TextColor: FFFFFF
@@ -101,27 +97,26 @@ All settings are available in the Windhawk mod settings panel:
 - IdleTimeout: 0
   $name: Idle timeout
   $description: Hide the panel after this many seconds of no music playing. 0 to disable.
-- ShowVolume: true
-  $name: Show volume slider
-  $description: Display a volume slider next to playback controls when hovered.
-- ShowProgress: true
+- ShowProgress: false
   $name: Show progress bar
   $description: Display a thin progress bar at the bottom showing playback position.
-- AlbumGlow: true
-  $name: Album art glow
-  $description: Show a subtle glow behind album art using its dominant color.
-- ShowTooltip: true
-  $name: Album art tooltip
-  $description: Show full song info popup when hovering over album art.
+- VolumeStep: 5
+  $name: Volume step
+  $description: Volume change amount per mouse wheel tick (1-20).
 - TransitionAnim: true
   $name: Song transition animation
-  $description: Smooth fade animation when song changes.
+  $description: Enable animation when song changes.
+- TransitionType: 1
+  $name: Transition style
+  $description: "Animation style for song changes. 0=None, 1=Title only (song name centered then controls appear), 2=Fade (all content fades in), 3=Slide (content slides in from right)."
+  $options:
+  - 0: None
+  - 1: Title only
+  - 2: Fade
+  - 3: Slide
 - MultiMonitor: true
   $name: Multi-monitor taskbar
   $description: Show on the taskbar of the monitor where media is playing (if multiple taskbars exist).
-- ScrollingText: true
-  $name: Scrolling text
-  $description: Automatically scroll long song titles that don't fit.
 - ScrollSpeed: 1
   $name: Scroll speed
   $description: Pixels to scroll per frame (1-10).
@@ -146,27 +141,15 @@ All settings are available in the Windhawk mod settings panel:
 - ProgressTrackOpacity: 50
   $name: Progress track opacity
   $description: Opacity of the progress bar background track, 0-255.
-- GlowSize: 8
-  $name: Glow size
-  $description: How far the album art glow extends beyond the art, in pixels (0-30).
-- GlowOpacity: 60
-  $name: Glow opacity
-  $description: Center opacity of the glow effect, 0-255.
 - AnimSpeed: "0.15"
   $name: Animation speed
   $description: Lerp speed for hover/scroll animations, 0.01-1.0.
-- TransitionSpeed: 15
+- TransitionSpeed: 8
   $name: Transition fade speed
   $description: Alpha change per frame during song transitions (1-50).
-- VolumeStep: "0.05"
-  $name: Volume wheel step
-  $description: Volume change per mouse wheel notch, 0.01-0.5.
 - ArtPadding: 6
   $name: Album art padding
   $description: Padding around the album art in pixels (0-20).
-- VolumeSliderWidth: 60
-  $name: Volume slider width
-  $description: Width of the volume slider in pixels (20-200).
 */
 // ==/WindhawkModSettings==
 
@@ -179,9 +162,7 @@ All settings are available in the Windhawk mod settings panel:
 #include <shlobj.h>
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
-#include <commctrl.h>
 // multimon API (EnumDisplayMonitors, MonitorFromWindow, GetMonitorInfo) — declared in windows.h
-#pragma comment(lib, "comctl32.lib")
 #include <string>
 #include <vector>
 #include <atomic>
@@ -267,8 +248,8 @@ typedef HWND(WINAPI* pCreateWindowInBand)(
 // --- Configurable State ---
 struct ModSettings {
     int width = 300;
-    int height = 48;
-    int fontSize = 11;
+    int height = 45;
+    int fontSize = 12;
     double buttonScale = 1.0;
     bool hideFullscreen = false;
     int idleTimeout = 0;
@@ -277,14 +258,11 @@ struct ModSettings {
     bool autoTheme = true;
     DWORD manualTextColor = 0xFFFFFFFF;
     int bgOpacity = 0;
-    bool albumColor = false;
-    bool showVolume = true;
-    bool showProgress = true;
-    bool albumGlow = true;
-    bool showTooltip = true;
+    bool albumColor = true;
+    bool showProgress = false;
     bool transitionAnim = true;
+    int transitionType = 1;
     bool multiMonitor = true;
-    bool scrollingText = true;
     int scrollSpeed = 1;
     int scrollDelay = 60;
     int buttonGap = 32;
@@ -293,13 +271,10 @@ struct ModSettings {
     int progressHeight = 2;
     int progressFillOpacity = 200;
     int progressTrackOpacity = 50;
-    int glowSize = 8;
-    int glowOpacity = 60;
     double animSpeed = 0.15;
-    int transitionSpeed = 15;
-    double volumeStep = 0.05;
+    int transitionSpeed = 8;
     int artPadding = 6;
-    int volumeSliderWidth = 60;
+    int volumeStep = 5;
 } g_Settings;
 
 // --- Global State ---
@@ -347,21 +322,14 @@ int g_TransitionAlpha = 255;  // 255 = fully showing current, 0 = fully showing 
 bool g_TransitionActive = false;
 int g_TransitionPhase = 0;  // 0 = idle, 1 = show-title-only, 2 = fade-controls-in
 int g_TransitionHoldCounter = 0;  // frames to hold before showing controls
+int g_TransitionSlideOffset = 0;  // for slide-in animation (pixels from right)
 
-// Volume slider
+// Volume (for mouse wheel)
 float g_VolumeLevel = -1.0f;
-float g_VolumeHoverAnim = 0.0f;
-bool g_VolumeSliderVisible = false;
-bool g_VolumeDragging = false;
-RECT g_VolumeSliderRect = {0};
 
 // Progress bar
 RECT g_ProgressBarRect = {0};
 bool g_ProgressDragging = false;
-
-// Tooltip
-HWND g_hTooltip = NULL;
-bool g_TooltipVisible = false;
 
 
 // --- Settings ---
@@ -402,15 +370,14 @@ void LoadSettings() {
     if (g_Settings.height < 24) g_Settings.height = 48;
 
     g_Settings.albumColor = Wh_GetIntSetting(L"AlbumColor") != 0;
-    g_Settings.showVolume = Wh_GetIntSetting(L"ShowVolume") != 0;
     g_Settings.showProgress = Wh_GetIntSetting(L"ShowProgress") != 0;
-    g_Settings.albumGlow = Wh_GetIntSetting(L"AlbumGlow") != 0;
-    g_Settings.showTooltip = Wh_GetIntSetting(L"ShowTooltip") != 0;
     g_Settings.transitionAnim = Wh_GetIntSetting(L"TransitionAnim") != 0;
+    g_Settings.transitionType = Wh_GetIntSetting(L"TransitionType");
+    if (g_Settings.transitionType < 0) g_Settings.transitionType = 0;
+    if (g_Settings.transitionType > 3) g_Settings.transitionType = 3;
     g_Settings.multiMonitor = Wh_GetIntSetting(L"MultiMonitor") != 0;
 
     // Scroll settings
-    g_Settings.scrollingText = Wh_GetIntSetting(L"ScrollingText") != 0;
     g_Settings.scrollSpeed = Wh_GetIntSetting(L"ScrollSpeed");
     g_Settings.scrollDelay = Wh_GetIntSetting(L"ScrollDelay");
     if (g_Settings.scrollSpeed < 1) g_Settings.scrollSpeed = 1;
@@ -434,14 +401,6 @@ void LoadSettings() {
     if (g_Settings.progressHeight < 1) g_Settings.progressHeight = 1;
     if (g_Settings.progressHeight > 8) g_Settings.progressHeight = 8;
 
-    // Glow settings
-    g_Settings.glowSize = Wh_GetIntSetting(L"GlowSize");
-    g_Settings.glowOpacity = Wh_GetIntSetting(L"GlowOpacity");
-    if (g_Settings.glowSize < 0) g_Settings.glowSize = 0;
-    if (g_Settings.glowSize > 30) g_Settings.glowSize = 30;
-    if (g_Settings.glowOpacity < 0) g_Settings.glowOpacity = 0;
-    if (g_Settings.glowOpacity > 255) g_Settings.glowOpacity = 255;
-
     // Animation settings
     PCWSTR animStr = Wh_GetStringSetting(L"AnimSpeed");
     if (animStr) {
@@ -457,24 +416,13 @@ void LoadSettings() {
     if (g_Settings.transitionSpeed < 1) g_Settings.transitionSpeed = 1;
     if (g_Settings.transitionSpeed > 50) g_Settings.transitionSpeed = 50;
 
-    // Volume settings
-    PCWSTR volStepStr = Wh_GetStringSetting(L"VolumeStep");
-    if (volStepStr) {
-        g_Settings.volumeStep = _wtof(volStepStr);
-        Wh_FreeStringSetting(volStepStr);
-    } else {
-        g_Settings.volumeStep = 0.05;
-    }
-    if (g_Settings.volumeStep < 0.01) g_Settings.volumeStep = 0.01;
-    if (g_Settings.volumeStep > 0.5) g_Settings.volumeStep = 0.5;
-
-    // Album art settings
     g_Settings.artPadding = Wh_GetIntSetting(L"ArtPadding");
-    g_Settings.volumeSliderWidth = Wh_GetIntSetting(L"VolumeSliderWidth");
     if (g_Settings.artPadding < 0) g_Settings.artPadding = 0;
     if (g_Settings.artPadding > 20) g_Settings.artPadding = 20;
-    if (g_Settings.volumeSliderWidth < 20) g_Settings.volumeSliderWidth = 20;
-    if (g_Settings.volumeSliderWidth > 200) g_Settings.volumeSliderWidth = 200;
+
+    g_Settings.volumeStep = Wh_GetIntSetting(L"VolumeStep");
+    if (g_Settings.volumeStep < 1) g_Settings.volumeStep = 1;
+    if (g_Settings.volumeStep > 20) g_Settings.volumeStep = 20;
 }
 
 // --- WinRT / GSMTC ---
@@ -579,12 +527,22 @@ void UpdateMediaInfo() {
 
             // Detect song change for transition animation
             bool songChanged = (newTitle != g_MediaState.title) && !g_MediaState.title.empty();
-            if (songChanged && g_Settings.transitionAnim && !g_TransitionActive) {
+            if (songChanged && g_Settings.transitionAnim && g_Settings.transitionType > 0 && !g_TransitionActive) {
                 g_PrevTitle = g_MediaState.title;
                 g_PrevArtist = g_MediaState.artist;
-                g_TransitionPhase = 1;  // Show title only
-                g_TransitionAlpha = 255;
-                g_TransitionHoldCounter = 120;  // ~2 seconds at 60fps
+
+                // Set initial phase based on transition type
+                if (g_Settings.transitionType == 1) {
+                    // Title only: show title first, then fade in controls
+                    g_TransitionPhase = 1;
+                    g_TransitionHoldCounter = 75;  // ~1.2 seconds
+                } else {
+                    // Fade or Slide: go directly to fade-in phase
+                    g_TransitionPhase = 2;
+                }
+
+                g_TransitionAlpha = 0;
+                g_TransitionSlideOffset = 0;
                 g_TransitionActive = true;
             }
 
@@ -799,11 +757,15 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     graphics.SetTextRenderingHint(TextRenderingHintAntiAlias);
     graphics.Clear(Color(0, 0, 0, 0));
 
-    // Transition: show title only during phase 1
-    if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 1) {
+    // Transition: show title only during phase 1 (Title Only mode)
+    if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 1 && g_Settings.transitionType == 1) {
         Color mainColor{GetCurrentTextColor()};
-        wstring fullText = g_MediaState.title;
-        if (!g_MediaState.artist.empty()) fullText += L" \u2022 " + g_MediaState.artist;
+        wstring fullText;
+        {
+            lock_guard<mutex> guard(g_MediaState.lock);
+            fullText = g_MediaState.title;
+            if (!g_MediaState.artist.empty()) fullText += L" \u2022 " + g_MediaState.artist;
+        }
 
         FontFamily fontFamily(FONT_NAME, nullptr);
         Font font(&fontFamily, (REAL)g_Settings.fontSize, FontStyleBold, UnitPixel);
@@ -826,6 +788,13 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     float fadeAlpha = 1.0f;
     if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 2) {
         fadeAlpha = (float)g_TransitionAlpha / 255.0f;
+    }
+
+    // Transition slide offset (for slide-in from right)
+    int globalSlideOffset = 0;
+    if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 2 && g_Settings.transitionType == 3) {
+        // Start at full width offset, ease to 0 as alpha increases
+        globalSlideOffset = (int)((255 - g_TransitionAlpha) * 0.8f);  // max ~200px offset
     }
 
     // Apply global alpha fade for transition phase 2
@@ -854,31 +823,16 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         state.durationMs = g_MediaState.durationMs;
     }
 
+    // Apply slide transform for transition (shifts all elements)
+    if (globalSlideOffset > 0) {
+        graphics.TranslateTransform((REAL)globalSlideOffset, 0);
+    }
+
     // 1. Album Art
     int artSize = height - 12;
     int artX = g_Settings.artPadding;
     int artY = g_Settings.artPadding;
     int cornerRadius = artSize / 5;
-
-    // Album glow effect
-    if (g_Settings.albumGlow && state.albumArt && state.dominantColor != 0) {
-        BYTE glowR = (state.dominantColor >> 16) & 0xFF;
-        BYTE glowG = (state.dominantColor >> 8) & 0xFF;
-        BYTE glowB = state.dominantColor & 0xFF;
-
-        GraphicsPath glowPath;
-        int glowExpand = g_Settings.glowSize;
-        glowPath.AddEllipse(artX - glowExpand, artY - glowExpand, artSize + glowExpand * 2, artSize + glowExpand * 2);
-
-        PathGradientBrush glowBrush(&glowPath);
-        BYTE glowAlpha = (BYTE)(g_Settings.glowOpacity * fadeAlpha);
-        glowBrush.SetCenterColor(Color(glowAlpha, glowR, glowG, glowB));
-        Color surroundColors[] = {Color(0, glowR, glowG, glowB)};
-        INT numColors = 1;
-        glowBrush.SetSurroundColors(surroundColors, &numColors);
-
-        graphics.FillPath(&glowBrush, &glowPath);
-    }
 
     // Create rounded clip path for album art
     GraphicsPath artClip;
@@ -960,37 +914,6 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         graphics.DrawString(&glyph, 1, &glyphFont, glyphLayout, &center, &iconBrush);
     }
 
-    // Volume slider
-    float volHoverTarget = (g_HoverState >= 1 && g_HoverState <= 3) ? 1.0f : 0.0f;
-    g_VolumeHoverAnim += (volHoverTarget - g_VolumeHoverAnim) * (float)g_Settings.animSpeed;
-    if (abs(g_VolumeHoverAnim - volHoverTarget) < 0.01f) g_VolumeHoverAnim = volHoverTarget;
-
-    if (g_Settings.showVolume && g_VolumeHoverAnim > 0.01f) {
-        float sliderStartX = startControlX + 3 * gap + btnRadius + 4;
-        float sliderY = controlY;
-        float sliderWidth = (float)g_Settings.volumeSliderWidth;
-        float sliderHeight = 4.0f;
-
-        if (g_VolumeLevel < 0) g_VolumeLevel = GetSystemVolume();
-        if (g_VolumeLevel < 0) g_VolumeLevel = 0.5f;
-
-        BYTE volAlpha = (BYTE)(g_VolumeHoverAnim * 255 * fadeAlpha);
-        SolidBrush trackBrush{Color((BYTE)(volAlpha * 0.3f), mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
-        graphics.FillRectangle(&trackBrush, sliderStartX, sliderY - sliderHeight/2, sliderWidth, sliderHeight);
-
-        SolidBrush fillBrush{Color(volAlpha, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
-        graphics.FillRectangle(&fillBrush, sliderStartX, sliderY - sliderHeight/2, sliderWidth * g_VolumeLevel, sliderHeight);
-
-        float thumbX = sliderStartX + sliderWidth * g_VolumeLevel;
-        SolidBrush thumbBrush{Color(volAlpha, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
-        graphics.FillEllipse(&thumbBrush, (REAL)(thumbX - 6), (REAL)(sliderY - 6), 12.0f, 12.0f);
-
-        g_VolumeSliderRect.left = (LONG)sliderStartX;
-        g_VolumeSliderRect.right = (LONG)(sliderStartX + sliderWidth);
-        g_VolumeSliderRect.top = (LONG)(sliderY - 10);
-        g_VolumeSliderRect.bottom = (LONG)(sliderY + 10);
-    }
-
     // Progress bar
     if (g_Settings.showProgress && state.durationMs > 0) {
         int barY = height - 4;
@@ -1036,14 +959,6 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     int textX = (int)(startControlX + 3 * gap + 12 * scale);
     int textMaxW = width - textX - 10;
 
-    if (g_Settings.showVolume && g_VolumeHoverAnim > 0.01f) {
-        int sliderEnd = (int)(startControlX + 3 * gap + btnRadius + 4 + g_Settings.volumeSliderWidth + 10);
-        if (sliderEnd > textX) {
-            textMaxW = width - sliderEnd - 10;
-            if (textMaxW < 50) textMaxW = 50;
-        }
-    }
-
     // Transition animation state for text
     BYTE textAlpha = (BYTE)(255 * fadeAlpha);
     int textSlideOffset = 0;
@@ -1064,7 +979,12 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     graphics.MeasureString(fullText.c_str(), -1, &font, layoutRect, &boundRect);
     g_TextWidth = (int)boundRect.Width;
 
-    Region textClip(Rect(textX, 0, textMaxW, height));
+    // Reset transform for text clipping so it uses screen coordinates
+    if (globalSlideOffset > 0) {
+        graphics.ResetTransform();
+    }
+
+    Region textClip(Rect(textX + globalSlideOffset, 0, textMaxW, height));
     graphics.SetClip(&textClip);
 
     // Vertically center text with buttons
@@ -1072,7 +992,7 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
 
     if (g_TextWidth > textMaxW) {
         g_IsScrolling = true;
-        float drawX = (float)(textX - g_ScrollOffset + textSlideOffset);
+        float drawX = (float)(textX + globalSlideOffset - g_ScrollOffset + textSlideOffset);
         graphics.DrawString(fullText.c_str(), -1, &font, PointF(drawX, textY), &textBrush);
         if (drawX + g_TextWidth < width) {
             graphics.DrawString(fullText.c_str(), -1, &font, PointF(drawX + g_TextWidth + 40, textY), &textBrush);
@@ -1080,7 +1000,7 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     } else {
         g_IsScrolling = false;
         g_ScrollOffset = 0;
-        graphics.DrawString(fullText.c_str(), -1, &font, PointF((float)(textX + textSlideOffset), textY), &textBrush);
+        graphics.DrawString(fullText.c_str(), -1, &font, PointF((float)(textX + globalSlideOffset + textSlideOffset), textY), &textBrush);
     }
 
     graphics.ResetClip();
@@ -1245,23 +1165,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             SetTimer(hwnd, IDT_POLL_MEDIA, 1000, NULL);
             RegisterTaskbarHook(hwnd);
 
-            // Create tooltip window
-            g_hTooltip = CreateWindowEx(
-                WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-                TOOLTIPS_CLASS,
-                nullptr,
-                WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
-                CW_USEDEFAULT, CW_USEDEFAULT,
-                CW_USEDEFAULT, CW_USEDEFAULT,
-                hwnd,
-                nullptr,
-                GetModuleHandle(nullptr),
-                nullptr
-            );
-            if (g_hTooltip) {
-                SetWindowPos(g_hTooltip, HWND_TOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
             return 0;
 
         case WM_ERASEBKGND:
@@ -1278,10 +1181,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             if (g_TaskbarHook) {
                 UnhookWinEvent(g_TaskbarHook);
                 g_TaskbarHook = nullptr;
-            }
-            if (g_hTooltip) {
-                DestroyWindow(g_hTooltip);
-                g_hTooltip = NULL;
             }
             g_SessionManager = nullptr;
             g_CurrentSession = nullptr;
@@ -1363,12 +1262,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     }
                 }
 
-                // Check if volume hover animation needs updating
-                float volTarget = (g_HoverState >= 1 && g_HoverState <= 3) ? 1.0f : 0.0f;
-                if (abs(g_VolumeHoverAnim - volTarget) > 0.01f) {
-                    needAnim = true;
-                }
-
                 // Progress bar: keep animating while media is playing
                 if (g_Settings.showProgress && g_MediaState.isPlaying && g_MediaState.durationMs > 0) {
                     needAnim = true;
@@ -1377,7 +1270,7 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 // Song transition animation
                 if (g_TransitionActive) {
                     if (g_TransitionPhase == 1) {
-                        // Hold title-only phase
+                        // Hold title-only phase (for type 1)
                         if (g_TransitionHoldCounter > 0) {
                             g_TransitionHoldCounter--;
                         } else {
@@ -1386,7 +1279,7 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         }
                         needAnim = true;
                     } else if (g_TransitionPhase == 2) {
-                        // Fade-in controls
+                        // Fade-in controls (for all types)
                         g_TransitionAlpha += g_Settings.transitionSpeed;
                         if (g_TransitionAlpha >= 255) {
                             g_TransitionAlpha = 255;
@@ -1462,19 +1355,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             int x = LOWORD(lParam);
             int y = HIWORD(lParam);
 
-            // Handle volume slider dragging
-            if (g_VolumeDragging) {
-                float sliderWidth = (float)(g_VolumeSliderRect.right - g_VolumeSliderRect.left);
-                float relX = (float)(x - g_VolumeSliderRect.left);
-                float newVol = relX / sliderWidth;
-                if (newVol < 0.0f) newVol = 0.0f;
-                if (newVol > 1.0f) newVol = 1.0f;
-                g_VolumeLevel = newVol;
-                SetSystemVolume(newVol);
-                InvalidateRect(hwnd, NULL, FALSE);
-                return 0;
-            }
-
             // Handle progress bar dragging
             if (g_ProgressDragging && g_ProgressBarRect.right > 0) {
                 float barWidth = (float)(g_ProgressBarRect.right - g_ProgressBarRect.left);
@@ -1513,46 +1393,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 }
             }
 
-            // Album art hover detection for tooltip
-            if (g_Settings.showTooltip && g_hTooltip) {
-                bool overAlbumArt = (x >= g_Settings.artPadding && x <= g_Settings.artPadding + artSize && y >= g_Settings.artPadding && y <= g_Settings.artPadding + artSize);
-                if (overAlbumArt && !g_TooltipVisible) {
-                    lock_guard<mutex> guard(g_MediaState.lock);
-                    if (g_MediaState.hasMedia) {
-                        wstring tipText = g_MediaState.title;
-                        if (!g_MediaState.artist.empty()) {
-                            tipText += L"\n" + g_MediaState.artist;
-                        }
-                        if (g_MediaState.durationMs > 0) {
-                            int durSec = (int)(g_MediaState.durationMs / 1000);
-                            int durMin = durSec / 60;
-                            durSec %= 60;
-                            wchar_t durBuf[32];
-                            swprintf_s(durBuf, L"\nDuration: %d:%02d", durMin, durSec);
-                            tipText += durBuf;
-                        }
-                        TTTOOLINFOW ti = { sizeof(TTTOOLINFOW), 0, hwnd, 1, {0,0,0,0}, nullptr, (LPWSTR)tipText.c_str(), 0 };
-                        ti.rect.left = 6;
-                        ti.rect.top = 6;
-                        ti.rect.right = 6 + artSize;
-                        ti.rect.bottom = 6 + artSize;
-                        SendMessageW(g_hTooltip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
-                        SendMessageW(g_hTooltip, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
-
-                        // Position tooltip above album art
-                        RECT panelRect;
-                        GetWindowRect(hwnd, &panelRect);
-                        SendMessageW(g_hTooltip, TTM_TRACKPOSITION, 0, MAKELPARAM(panelRect.left + 6, panelRect.top - 60));
-                        g_TooltipVisible = true;
-                    }
-                } else if (!overAlbumArt && g_TooltipVisible) {
-                    TTTOOLINFOW ti = { sizeof(TTTOOLINFOW), 0, hwnd, 1 };
-                    SendMessageW(g_hTooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
-                    SendMessageW(g_hTooltip, TTM_DELTOOLW, 0, (LPARAM)&ti);
-                    g_TooltipVisible = false;
-                }
-            }
-
             if (newState != g_HoverState) {
                 g_HoverState = newState;
                 SetTimer(hwnd, IDT_ANIMATION, 16, NULL);
@@ -1565,36 +1405,13 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         case WM_MOUSELEAVE:
             g_HoverState = 0;
-            g_VolumeDragging = false;
             g_ProgressDragging = false;
-            if (g_hTooltip && g_TooltipVisible) {
-                TTTOOLINFOW ti = { sizeof(TTTOOLINFOW), 0, hwnd, 1 };
-                SendMessageW(g_hTooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
-                SendMessageW(g_hTooltip, TTM_DELTOOLW, 0, (LPARAM)&ti);
-                g_TooltipVisible = false;
-            }
             SetTimer(hwnd, IDT_ANIMATION, 16, NULL);
             InvalidateRect(hwnd, NULL, FALSE);
             break;
         case WM_LBUTTONDOWN: {
             int x = LOWORD(lParam);
             int y = HIWORD(lParam);
-            if (g_Settings.showVolume && g_VolumeHoverAnim > 0.5f) {
-                if (x >= g_VolumeSliderRect.left && x <= g_VolumeSliderRect.right &&
-                    y >= g_VolumeSliderRect.top && y <= g_VolumeSliderRect.bottom) {
-                    g_VolumeDragging = true;
-                    float sliderWidth = (float)(g_VolumeSliderRect.right - g_VolumeSliderRect.left);
-                    float relX = (float)(x - g_VolumeSliderRect.left);
-                    float newVol = relX / sliderWidth;
-                    if (newVol < 0.0f) newVol = 0.0f;
-                    if (newVol > 1.0f) newVol = 1.0f;
-                    g_VolumeLevel = newVol;
-                    SetSystemVolume(newVol);
-                    InvalidateRect(hwnd, NULL, FALSE);
-                    SetCapture(hwnd);
-                    return 0;
-                }
-            }
             // Progress bar seeking
             if (g_Settings.showProgress && g_ProgressBarRect.right > 0) {
                 if (x >= g_ProgressBarRect.left && x <= g_ProgressBarRect.right &&
@@ -1621,11 +1438,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             return 0;
         }
         case WM_LBUTTONUP: {
-            if (g_VolumeDragging) {
-                g_VolumeDragging = false;
-                ReleaseCapture();
-                return 0;
-            }
             if (g_ProgressDragging) {
                 g_ProgressDragging = false;
                 ReleaseCapture();
@@ -1638,12 +1450,11 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         case WM_MOUSEWHEEL: {
             short zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-            float step = (float)g_Settings.volumeStep;
             if (g_VolumeLevel < 0) g_VolumeLevel = GetSystemVolume();
             if (g_VolumeLevel < 0) g_VolumeLevel = 0.5f;
+            float step = (float)g_Settings.volumeStep / 100.0f;
             g_VolumeLevel += (zDelta > 0 ? step : -step);
             SetSystemVolume(g_VolumeLevel);
-            InvalidateRect(hwnd, NULL, FALSE);
             return 0;
         }
         case WM_PAINT: {
@@ -1661,8 +1472,6 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 float target = (g_HoverState == i) ? 255.0f : 0.0f;
                 if (abs(g_ButtonAnim[i] - target) > 1.0f) needAnim = true;
             }
-            float volTarget = (g_HoverState >= 1 && g_HoverState <= 3) ? 1.0f : 0.0f;
-            if (abs(g_VolumeHoverAnim - volTarget) > 0.01f) needAnim = true;
             if (g_TransitionActive) needAnim = true;
             // Keep animation running for smooth progress bar interpolation
             if (g_Settings.showProgress && g_MediaState.isPlaying && g_MediaState.durationMs > 0) needAnim = true;
