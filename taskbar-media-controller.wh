@@ -345,8 +345,8 @@ wstring g_PrevArtist = L"";
 Bitmap* g_PrevAlbumArt = nullptr;
 int g_TransitionAlpha = 255;  // 255 = fully showing current, 0 = fully showing prev
 bool g_TransitionActive = false;
-int g_TransitionPhase = 0;  // 0 = idle, 1 = slide-in, 2 = hold, 3 = fade-out
-int g_TransitionHoldCounter = 0;  // frames to hold before fade-out
+int g_TransitionPhase = 0;  // 0 = idle, 1 = show-title-only, 2 = fade-controls-in
+int g_TransitionHoldCounter = 0;  // frames to hold before showing controls
 
 // Volume slider
 float g_VolumeLevel = -1.0f;
@@ -582,9 +582,9 @@ void UpdateMediaInfo() {
             if (songChanged && g_Settings.transitionAnim && !g_TransitionActive) {
                 g_PrevTitle = g_MediaState.title;
                 g_PrevArtist = g_MediaState.artist;
-                g_TransitionPhase = 1;  // Start with slide-in
-                g_TransitionAlpha = 0;  // Start invisible, slide in
-                g_TransitionHoldCounter = 0;
+                g_TransitionPhase = 1;  // Show title only
+                g_TransitionAlpha = 255;
+                g_TransitionHoldCounter = 120;  // ~2 seconds at 60fps
                 g_TransitionActive = true;
             }
 
@@ -799,7 +799,47 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     graphics.SetTextRenderingHint(TextRenderingHintAntiAlias);
     graphics.Clear(Color(0, 0, 0, 0));
 
+    // Transition: show title only during phase 1
+    if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 1) {
+        Color mainColor{GetCurrentTextColor()};
+        wstring fullText = g_MediaState.title;
+        if (!g_MediaState.artist.empty()) fullText += L" \u2022 " + g_MediaState.artist;
+
+        FontFamily fontFamily(FONT_NAME, nullptr);
+        Font font(&fontFamily, (REAL)g_Settings.fontSize, FontStyleBold, UnitPixel);
+        SolidBrush textBrush{Color(255, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
+
+        RectF layoutRect(0, 0, 2000, 100);
+        RectF boundRect;
+        graphics.MeasureString(fullText.c_str(), -1, &font, layoutRect, &boundRect);
+
+        float textX = (width - boundRect.Width) / 2.0f;
+        float textY = (height - boundRect.Height) / 2.0f;
+
+        graphics.DrawString(fullText.c_str(), -1, &font, PointF(textX, textY), &textBrush);
+        return;
+    }
+
     Color mainColor{GetCurrentTextColor()};
+
+    // Transition fade-in alpha for phase 2 (controls reappearing)
+    float fadeAlpha = 1.0f;
+    if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 2) {
+        fadeAlpha = (float)g_TransitionAlpha / 255.0f;
+    }
+
+    // Apply global alpha fade for transition phase 2
+    ImageAttributes globalImgAttr;
+    if (fadeAlpha < 1.0f) {
+        ColorMatrix fadeMatrix = {
+            fadeAlpha, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, fadeAlpha, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, fadeAlpha, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, fadeAlpha, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 1.0f
+        };
+        globalImgAttr.SetColorMatrix(&fadeMatrix, ColorMatrixFlagsDefault, ColorAdjustTypeBitmap);
+    }
 
     MediaState state;
     {
@@ -831,7 +871,8 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         glowPath.AddEllipse(artX - glowExpand, artY - glowExpand, artSize + glowExpand * 2, artSize + glowExpand * 2);
 
         PathGradientBrush glowBrush(&glowPath);
-        glowBrush.SetCenterColor(Color((BYTE)g_Settings.glowOpacity, glowR, glowG, glowB));
+        BYTE glowAlpha = (BYTE)(g_Settings.glowOpacity * fadeAlpha);
+        glowBrush.SetCenterColor(Color(glowAlpha, glowR, glowG, glowB));
         Color surroundColors[] = {Color(0, glowR, glowG, glowB)};
         INT numColors = 1;
         glowBrush.SetSurroundColors(surroundColors, &numColors);
@@ -851,15 +892,22 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
     graphics.SetClip(&artClip);
 
     if (state.albumArt) {
-        graphics.DrawImage(state.albumArt, artX, artY, artSize, artSize);
+        if (fadeAlpha < 1.0f) {
+            graphics.DrawImage(state.albumArt, Rect(artX, artY, artSize, artSize),
+                             0, 0, artSize, artSize, UnitPixel, &globalImgAttr);
+        } else {
+            graphics.DrawImage(state.albumArt, artX, artY, artSize, artSize);
+        }
         delete state.albumArt;
     } else {
         // Placeholder with music note glyph
-        SolidBrush placeBrush{Color(40, 128, 128, 128)};
+        BYTE placeAlpha = (BYTE)(40 * fadeAlpha);
+        SolidBrush placeBrush{Color(placeAlpha, 128, 128, 128)};
         graphics.FillRectangle(&placeBrush, artX, artY, artSize, artSize);
         FontFamily glyphFamily(L"Segoe Fluent Icons");
         Font noteFont(&glyphFamily, (REAL)(artSize * 0.5), FontStyleRegular, UnitPixel);
-        SolidBrush noteBrush{Color(120, 128, 128, 128)};
+        BYTE noteAlpha = (BYTE)(120 * fadeAlpha);
+        SolidBrush noteBrush{Color(noteAlpha, 128, 128, 128)};
         WCHAR note = 0xE8D6;
         RectF noteRect((float)artX, (float)artY, (float)artSize, (float)artSize);
         StringFormat center;
@@ -890,14 +938,14 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         g_ButtonAnim[i] += (target - g_ButtonAnim[i]) * (float)g_Settings.animSpeed;
         if (abs(g_ButtonAnim[i] - target) < 1.0f) g_ButtonAnim[i] = target;
 
-        BYTE bgAlpha = (BYTE)(g_ButtonAnim[i] * (float)g_Settings.buttonHoverOpacity / 255.0f);
+        BYTE bgAlpha = (BYTE)(g_ButtonAnim[i] * (float)g_Settings.buttonHoverOpacity / 255.0f * fadeAlpha);
         if (bgAlpha > 0) {
             SolidBrush bgBrush{Color(bgAlpha, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
             int rr = (int)(6.0f * scale);
             DrawRoundedRect(graphics, bgBrush, (int)(btnX - btnRadius), (int)(btnY - btnRadius), (int)(btnRadius * 2), (int)(btnRadius * 2), rr);
         }
 
-        BYTE iconAlpha = (BYTE)(g_Settings.iconOpacity * 2.55f + g_ButtonAnim[i] * 0.4f);
+        BYTE iconAlpha = (BYTE)((g_Settings.iconOpacity * 2.55f + g_ButtonAnim[i] * 0.4f) * fadeAlpha);
         SolidBrush iconBrush{Color(iconAlpha, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
 
         WCHAR glyph = 0;
@@ -926,7 +974,7 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         if (g_VolumeLevel < 0) g_VolumeLevel = GetSystemVolume();
         if (g_VolumeLevel < 0) g_VolumeLevel = 0.5f;
 
-        BYTE volAlpha = (BYTE)(g_VolumeHoverAnim * 255);
+        BYTE volAlpha = (BYTE)(g_VolumeHoverAnim * 255 * fadeAlpha);
         SolidBrush trackBrush{Color((BYTE)(volAlpha * 0.3f), mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
         graphics.FillRectangle(&trackBrush, sliderStartX, sliderY - sliderHeight/2, sliderWidth, sliderHeight);
 
@@ -964,14 +1012,14 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         }
 
         // Background track
-        SolidBrush trackBrush{Color((BYTE)g_Settings.progressTrackOpacity, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
+        SolidBrush trackBrush{Color((BYTE)(g_Settings.progressTrackOpacity * fadeAlpha), mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
         DrawRoundedRect(graphics, trackBrush, padding, barY, barWidth, barHeight, barRadius);
 
         // Filled progress
         if (displayProgress > 0.0 && displayProgress <= 1.0) {
             int fillWidth = (int)(barWidth * displayProgress);
             if (fillWidth > 0) {
-                SolidBrush fillBrush{Color((BYTE)g_Settings.progressFillOpacity, mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
+                SolidBrush fillBrush{Color((BYTE)(g_Settings.progressFillOpacity * fadeAlpha), mainColor.GetRed(), mainColor.GetGreen(), mainColor.GetBlue())};
                 DrawRoundedRect(graphics, fillBrush, padding, barY, fillWidth, barHeight, barRadius);
             }
         }
@@ -996,21 +1044,12 @@ void DrawMediaPanel(HDC hdc, int width, int height) {
         }
     }
 
-    // Transition animation state
-    BYTE textAlpha = 255;
+    // Transition animation state for text
+    BYTE textAlpha = (BYTE)(255 * fadeAlpha);
     int textSlideOffset = 0;
-    if (g_Settings.transitionAnim && g_TransitionActive) {
-        if (g_TransitionPhase == 1) {
-            // Slide-in: fade in + slide from right
-            textAlpha = (BYTE)g_TransitionAlpha;
-            textSlideOffset = (int)((255 - g_TransitionAlpha) * 0.15f);  // Slide from ~38px right
-        } else if (g_TransitionPhase == 2) {
-            // Hold: fully visible
-            textAlpha = 255;
-        } else if (g_TransitionPhase == 3) {
-            // Fade-out: just fade
-            textAlpha = (BYTE)g_TransitionAlpha;
-        }
+    if (g_Settings.transitionAnim && g_TransitionActive && g_TransitionPhase == 2) {
+        // Slide-in from right during fade-in
+        textSlideOffset = (int)((255 - g_TransitionAlpha) * 0.15f);
     }
 
     wstring fullText = state.title;
@@ -1338,27 +1377,19 @@ LRESULT CALLBACK MediaWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 // Song transition animation
                 if (g_TransitionActive) {
                     if (g_TransitionPhase == 1) {
-                        // Slide-in: fade from 0 to 255
-                        g_TransitionAlpha += g_Settings.transitionSpeed;
-                        if (g_TransitionAlpha >= 255) {
-                            g_TransitionAlpha = 255;
-                            g_TransitionPhase = 2;  // Switch to hold
-                            g_TransitionHoldCounter = 90;  // ~1.5 seconds at 60fps
-                        }
-                        needAnim = true;
-                    } else if (g_TransitionPhase == 2) {
-                        // Hold: count down frames
+                        // Hold title-only phase
                         if (g_TransitionHoldCounter > 0) {
                             g_TransitionHoldCounter--;
                         } else {
-                            g_TransitionPhase = 3;  // Switch to fade-out
+                            g_TransitionPhase = 2;  // Switch to fade-in controls
+                            g_TransitionAlpha = 0;
                         }
                         needAnim = true;
-                    } else if (g_TransitionPhase == 3) {
-                        // Fade-out: fade from 255 to 0
-                        g_TransitionAlpha -= g_Settings.transitionSpeed;
-                        if (g_TransitionAlpha <= 0) {
-                            g_TransitionAlpha = 0;
+                    } else if (g_TransitionPhase == 2) {
+                        // Fade-in controls
+                        g_TransitionAlpha += g_Settings.transitionSpeed;
+                        if (g_TransitionAlpha >= 255) {
+                            g_TransitionAlpha = 255;
                             g_TransitionActive = false;
                             g_TransitionPhase = 0;
                         }
