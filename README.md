@@ -12,8 +12,6 @@
   <a href="#installation">Installation</a> • <a href="#features">Features</a> • <a href="#configuration">Configuration</a>
 </p>
 
-https://github.com/user-attachments/assets/
-
 ## Features
 
 - **Now Playing** - Displays song title, artist, and album art from any app using Windows media transport controls (Spotify, YouTube Music, Tidal, etc.)
