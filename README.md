@@ -1,6 +1,18 @@
-# Taskbar Media Controller
+<p align="center">
+  <img src="assets/logo.svg" alt="Taskbar Media Controller" width="128" />
+</p>
 
-A sleek taskbar widget that shows your currently playing music with playback controls for Windows 10/11.
+<h1 align="center">Taskbar Media Controller</h1>
+
+<p align="center">
+  A sleek taskbar widget that shows your currently playing music with playback controls for Windows 10/11.
+</p>
+
+<p align="center">
+  <a href="#installation">Installation</a> • <a href="#features">Features</a> • <a href="#configuration">Configuration</a>
+</p>
+
+https://github.com/user-attachments/assets/
 
 ## Features
 
